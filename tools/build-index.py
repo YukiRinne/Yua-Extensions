@@ -87,6 +87,17 @@ def render(rows):
     return "\r\n".join(lines) + "\r\n"
 
 
+def normalize_lines(text):
+    """比较用：去 BOM 后按行拆，忽略行尾差异。
+    为什么：index.txt 在仓库里可能以 LF 存储（git autocrlf 在 Windows 提交时把它转掉了）、
+    在 Windows 工作区以 CRLF 存在、而 render() 生成的是 CRLF（镜像产品 WriteManifest）。
+    三者**内容**必须一致，行尾不该一票否决 —— 2026-10-16 首次 CI 就栽在这里
+    （Linux checkout 全 LF -> --check 误报不一致）。行尾本身由 .gitattributes 管住。
+    """
+    text = text.lstrip("﻿").replace("\r\n", "\n")
+    return [line for line in text.split("\n") if line.strip()]
+
+
 def main():
     check_only = "--check" in sys.argv
     rows, problems = scan()
@@ -101,7 +112,7 @@ def main():
         if os.path.isfile(index_path):
             with io_open(index_path) as fh:
                 existing = fh.read()
-        if existing != rendered:
+        if normalize_lines(existing) != normalize_lines(rendered):
             print("[CI] index.txt 与重生成结果不一致 —— 请运行 "
                   "python tools/build-index.py 后重新提交", file=sys.stderr)
             return 1
