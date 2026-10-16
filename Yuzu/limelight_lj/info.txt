@@ -1,0 +1,31 @@
+﻿YuaExtract 扩展集信息（只读副本，仅供人看）
+工具一律不读本文件；加载只认 rules.int 里的 META chunk。
+
+会社：Yuzu
+作品：limelight_lj
+贡献者：Rinne
+版本：v1.0
+日期：2026-10-15
+留言：
+生成时间：2026-10-15 14:52:34
+工具版本：YuaExtract extension-set/1
+
+盐：xp3hnp（saltKnown=1）
+盐摘要（sha256）：62861CF229289B89F5F780290C8453E18FC4FB6FBD4027BAC5B3E4062DB3E476
+目标 exe：limelight_lj.exe（4408832 字节）
+目标 exe 摘要：6FA87BE4CA6A22AA68EB5714BBA3F4819AF640E747AD20DA7D8A13324D5351AC
+兄弟 exe：limelight_lj_crack.exe
+兄弟 exe 摘要：01F4D2AF1A7D65AA9C52EDC2448B5F0B95075085E730DC2599D1D3C8CF540952
+来源目录：Restored_Extractor_Output
+
+目录条数：49
+文件条数：85236
+例外条数：0
+去重条数：81467
+档案路径：E:\GAME\GALGAME\LimeLight Lemonade Jam\ライムライト・レモネードジャム\ライムライト・レモネードジャム\ExtensionDraft\rules.int
+
+采集来源：
+  DirectoryHash.log（49 条）
+  FileNameHash.log（61922 条）
+  MinedNames.lst（51875 条）
+  offline_recovered.lst（52906 条）
