@@ -1,0 +1,65 @@
+name: Check extension submission
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: >-
+      !github.event.issue.pull_request &&
+      (contains(github.event.issue.body, '### 扩展集文件') || contains(github.event.issue.body, '### 操作')) &&
+      (github.event_name == 'issues' || github.event.comment.body == '/recheck')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: submission-check-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate submitted extension archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/submission.py check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: submission
+          path: .local/submission/
+          include-hidden-files: true
+          retention-days: 30
+
+  report:
+    needs: check
+    if: always() && needs.check.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: submission
+          path: .local/submission/
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/submission.py report

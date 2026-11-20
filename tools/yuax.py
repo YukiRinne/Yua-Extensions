@@ -17,6 +17,7 @@
 
 import hashlib
 import os
+import re
 import struct
 import zlib
 
@@ -29,9 +30,17 @@ FLAG_ZLIB = 0x1
 
 INDEX_FILENAME = "index.txt"
 ARCHIVE_FILENAME = "rules.int"
+CATALOG_FILENAME = "catalog.json"
+YANKED_FILENAME = "yanked.json"
 INDEX_HEADER = ("# 会社\t作品\t目标exe摘要\t兄弟exe摘要\t盐摘要\t档案摘要\t"
                 "条数\t生成时间\t安装时间\t来源")
 INDEX_COLUMNS = INDEX_HEADER.lstrip("#").strip().split("\t")
+
+_WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
 
 
 # ---------------- 容器解析 ----------------
@@ -265,3 +274,159 @@ def parse_index(text):
 def index_line(row):
     """ManifestRow 形状 -> 一行 TSV。row 用 dict，键 = INDEX_COLUMNS。"""
     return "\t".join(row.get(col, "") for col in INDEX_COLUMNS)
+
+
+def is_windows_reserved_name(name):
+    """判别 Windows 设备保留名（含带扩展名形式如 CON.txt）。"""
+    cleaned = (name or "").strip(" .")
+    if not cleaned:
+        return True
+    stem = cleaned.split(".", 1)[0].upper()
+    return stem in _WINDOWS_RESERVED_NAMES
+
+
+def _ascii_slug(text):
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", (text or "").strip())
+    slug = re.sub(r"_+", "_", slug).strip("._-")
+    if ".." in slug:
+        slug = slug.replace("..", "_")
+    return slug
+
+
+def ascii_asset_name(publisher, title, archive_sha256):
+    """生成 GitHub Releases 安全的纯 ASCII 附件名（含档案 sha256 前 12 位防碰撞）。"""
+    pub_slug = _ascii_slug(publisher)
+    title_slug = _ascii_slug(title)
+    sha12 = (archive_sha256 or "").strip().lower()[:12]
+    if not re.fullmatch(r"[0-9a-f]{12}", sha12):
+        raise ValueError("INVALID_ARCHIVE_SHA256")
+    if pub_slug and title_slug:
+        base = f"{pub_slug}__{title_slug}"
+    else:
+        slot_key = f"{(publisher or '').strip().lower()}\0{(title or '').strip().lower()}"
+        base = f"ext_{sha256_text(slot_key).lower()[:8]}"
+    max_base_len = 80 - len(f"__{sha12}.int")
+    if len(base) > max_base_len:
+        base = base[:max_base_len].rstrip("._-")
+        if not base:
+            slot_key = f"{(publisher or '').strip().lower()}\0{(title or '').strip().lower()}"
+            base = f"ext_{sha256_text(slot_key).lower()[:8]}"
+    name = f"{base}__{sha12}.int"
+    if not re.fullmatch(r"[A-Za-z0-9._-]+\.int", name):
+        raise ValueError("ASSET_NAME_NOT_ASCII")
+    return name
+
+
+def validate_archive_parsed(parsed, expected_publisher=None, expected_title=None):
+    """对 parse_archive 结果做深度安全与自洽校验；返回问题列表（空列表表示通过）。"""
+    problems = []
+    if not parsed.get("ok"):
+        return list(parsed.get("problems") or ["档案解码失败"])
+
+    meta = parsed.get("meta") or {}
+    identity = parsed.get("identity") or {}
+    stats = parsed.get("stats") or {}
+
+    publisher = meta.get("publisher", "").strip()
+    title = meta.get("title", "").strip()
+    safe_pub = safe_component(publisher)
+    safe_title = safe_component(title)
+    if not publisher or not title:
+        problems.append("META 缺少 publisher 或 title")
+    elif not safe_pub or not safe_title:
+        problems.append("META 的 publisher 或 title 净化后为空，无法作为目录名")
+    elif is_windows_reserved_name(safe_pub) or is_windows_reserved_name(safe_title):
+        problems.append("META 的 publisher 或 title 命中 Windows 保留设备名")
+
+    if expected_publisher is not None and safe_component(expected_publisher).lower() != safe_pub.lower():
+        problems.append(
+            "目录与档案 META 会社不一致（期望 %s，实际 %s）" % (expected_publisher, meta.get("publisher", "?"))
+        )
+    if expected_title is not None and safe_component(expected_title).lower() != safe_title.lower():
+        problems.append(
+            "目录与档案 META 作品不一致（期望 %s，实际 %s）" % (expected_title, meta.get("title", "?"))
+        )
+
+    hex_re = re.compile(r"^[0-9A-F]{64}$")
+    target_sha = identity.get("target.sha256", "").strip().upper()
+    if not hex_re.match(target_sha):
+        problems.append("IDENTITY 缺少有效的 64 位目标 exe SHA-256（target.sha256）")
+    sibling_sha = identity.get("sibling.sha256", "").strip().upper()
+    if sibling_sha and not hex_re.match(sibling_sha):
+        problems.append("IDENTITY 的 sibling.sha256 格式不是 64 位 SHA-256")
+
+    exceptions = parsed.get("exceptions") or []
+    if exceptions:
+        problems.append("自校验例外 %d 条（必须为 0）：%s" % (len(exceptions), exceptions[:3]))
+
+    dirs = parsed.get("dirs") or []
+    files = parsed.get("files") or []
+    if len(dirs) + len(files) == 0:
+        problems.append("档案条数为 0（DIRS 与 FILES 均为空）")
+
+    salt = identity.get("salt", "")
+    file_hashes = {file_hash(n, salt) for n in files}
+    dir_hashes = {domain_hash(normalize_dir(n), salt) for n in dirs}
+    if len(file_hashes) != len(files):
+        problems.append("文件名展开后哈希有塌缩（%d 个名字 -> %d 个哈希）" % (len(files), len(file_hashes)))
+    if len(dir_hashes) != len(dirs):
+        problems.append("目录名展开后哈希有塌缩（%d 个名字 -> %d 个哈希）" % (len(dirs), len(dir_hashes)))
+
+    stats_files = stats.get("files", "")
+    stats_dirs = stats.get("directories", "")
+    stats_exceptions = stats.get("exceptions", "")
+    if stats_files and (not stats_files.isdigit() or int(stats_files) != len(files)):
+        problems.append("STATS.files=%s 与 FILES chunk %d 条不一致" % (stats_files, len(files)))
+    if stats_dirs and (not stats_dirs.isdigit() or int(stats_dirs) != len(dirs)):
+        problems.append("STATS.directories=%s 与 DIRS chunk %d 条不一致" % (stats_dirs, len(dirs)))
+    if stats_exceptions and (not stats_exceptions.isdigit() or int(stats_exceptions) != len(exceptions)):
+        problems.append("STATS.exceptions=%s 与 EXCEPTIONS chunk %d 条不一致" % (stats_exceptions, len(exceptions)))
+
+    return problems
+
+
+def render_info_txt(parsed):
+    """生成不含投稿人本机磁盘路径的只读 info.txt 文本（CRLF）。"""
+    meta = parsed.get("meta") or {}
+    identity = parsed.get("identity") or {}
+    stats = parsed.get("stats") or {}
+    dirs = parsed.get("dirs") or []
+    files = parsed.get("files") or []
+    exceptions = parsed.get("exceptions") or []
+
+    salt = identity.get("salt", "")
+    salt_known = identity.get("saltKnown", "0")
+    salt_display = salt if salt else "（空串）"
+    target_exe = identity.get("target.name", "") or "-"
+    target_size = identity.get("target.size", "") or "0"
+    target_sha = identity.get("target.sha256", "").upper() or "-"
+    sibling_exe = identity.get("sibling.name", "") or "-"
+    sibling_sha = identity.get("sibling.sha256", "").upper() or "-"
+
+    lines = [
+        "YuaExtract 扩展集信息（只读副本，仅供人看）",
+        "工具一律不读本文件；加载只认 rules.int 里的 META chunk。",
+        "",
+        f"会社：{meta.get('publisher', '')}",
+        f"作品：{meta.get('title', '')}",
+        f"贡献者：{meta.get('contributor', '')}",
+        f"版本：{meta.get('version', '')}",
+        f"日期：{meta.get('date', '')}",
+        f"留言：{meta.get('comment', '')}",
+        f"生成时间：{meta.get('generatedAt', '')}",
+        f"工具版本：{meta.get('toolVersion', '')}",
+        "",
+        f"盐：{salt_display}（saltKnown={salt_known}）",
+        f"盐摘要（sha256）：{sha256_text(salt)}",
+        f"档案摘要（sha256）：{parsed.get('sha256', '')}",
+        f"目标 exe：{target_exe}（{target_size} 字节）",
+        f"目标 exe 摘要：{target_sha}",
+        f"兄弟 exe：{sibling_exe}",
+        f"兄弟 exe 摘要：{sibling_sha}",
+        "",
+        f"目录条数：{len(dirs)}",
+        f"文件条数：{len(files)}",
+        f"例外条数：{len(exceptions)}",
+        f"去重条数：{stats.get('duplicates', '0')}",
+    ]
+    return "\r\n".join(lines) + "\r\n"

@@ -1,0 +1,22 @@
+name: 投稿或更新扩展集
+description: 上传压缩后的 rules.int，机器人自动深度校验，维护者批准后自动入库并发布。
+title: "[扩展集投稿] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先将生成的 `rules.int` **压缩为 `.zip`**（GitHub Issue 附件不直接接受 `.int` 后缀），再把 `.zip` 拖入下方输入框（或粘贴公网 `https://` 直链）。
+        公司、作品、目标 exe 摘要与条目数均从 `rules.int` 内部自动读取，无需手填；提交前请务必用 **只读测试（Dry-Run）或实际解包** 验证还原效果。
+  - type: textarea
+    id: archive_file
+    attributes:
+      label: 扩展集文件
+      description: 拖入包含单个 `rules.int` 的 `.zip` 附件，或填写 `https://` 直链（上限 64 MiB）。
+      placeholder: 将 rules.int 打成 .zip 后拖到这里，或填写 https://...
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: 补充说明
+      description: 可选：说明游戏版本、已验证环境、覆盖范围或与旧版差异。

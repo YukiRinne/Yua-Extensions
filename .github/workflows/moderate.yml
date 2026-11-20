@@ -1,0 +1,100 @@
+name: Review extension submission
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-extension-submissions
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: >-
+      !github.event.issue.pull_request &&
+      (contains(github.event.issue.body, '### 扩展集文件') || contains(github.event.issue.body, '### 操作')) &&
+      (startsWith(github.event.comment.body, '/approve ') ||
+      github.event.comment.body == '/reject' || startsWith(github.event.comment.body, '/reject '))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      pull_request: ${{ steps.review.outputs.pull_request }}
+      head_sha: ${{ steps.review.outputs.head_sha }}
+      base_sha: ${{ steps.review.outputs.base_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/submission.py moderate
+
+  validate:
+    needs: review
+    if: needs.review.outputs.pull_request != ''
+    uses: ./.github/workflows/validate.yml
+    with:
+      ref: ${{ needs.review.outputs.head_sha }}
+
+  merge:
+    needs: [review, validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_REQUEST: ${{ needs.review.outputs.pull_request }}
+          HEAD_SHA: ${{ needs.review.outputs.head_sha }}
+        run: python tools/submission.py merge
+
+  publish:
+    needs: merge
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish.yml
+
+  finish:
+    needs: [review, validate, merge, publish]
+    if: ${{ !cancelled() && (contains(needs.*.result, 'failure') || needs.publish.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED_STAGE: >-
+            ${{ needs.review.result == 'failure' && '处理审批'
+              || needs.validate.result == 'failure' && '校验收录 PR'
+              || needs.merge.result == 'failure' && '合并收录 PR'
+              || '收录 PR 已合并，Releases 目录发布' }}
+          CATALOG_RELEASE: ${{ needs.publish.outputs.release_url }}
+        run: python tools/submission.py finish

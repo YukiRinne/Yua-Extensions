@@ -1,0 +1,96 @@
+name: Publish GitHub catalog
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.txt'
+      - 'yanked.json'
+      - '**/rules.int'
+      - 'tools/**'
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      release_url:
+        value: ${{ jobs.publish.outputs.release_url }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-catalog
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.revision.outputs.commit }}
+      short_sha: ${{ steps.revision.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          fetch-depth: 0
+          persist-credentials: false
+      - id: revision
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -v
+      - run: python tools/build-index.py --check
+      - run: python tools/validate.py
+      - run: python tools/build-catalog.py --output dist/registry --base-url https://example.invalid
+      - uses: actions/upload-artifact@v4
+        with:
+          name: github-distribution
+          path: dist/registry/
+          if-no-files-found: error
+          overwrite: true
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_url: ${{ steps.release.outputs.url }}
+    env:
+      RELEASE_TAG: catalog-${{ needs.build.outputs.short_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      RELEASE_ROOT: ${{ github.server_url }}/${{ github.repository }}/releases
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: github-distribution
+          path: dist/registry
+      - name: Prepare Release assets
+        run: >-
+          python tools/build-catalog.py --prepare-release-assets
+          --distribution dist/registry --output dist/assets
+          --base-url "$RELEASE_ROOT/download/$RELEASE_TAG"
+          --release-tag "$RELEASE_TAG"
+      - name: Publish completed catalog and extension archives
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          current_index=$(gh api "repos/$GITHUB_REPOSITORY/contents/index.txt?ref=main" --jq .sha)
+          if [ "$current_index" != "$(git rev-parse HEAD:index.txt)" ]; then
+            echo "main 的 index.txt 已更新，请重新运行发布工作流以生成最新目录。" >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" --target "$RELEASE_COMMIT" --draft --title "扩展集目录 ($RELEASE_TAG)" --notes "由已校验的 main 提交自动打包发布。"
+          gh release upload "$RELEASE_TAG" dist/assets/*
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          echo "url=$RELEASE_ROOT/tag/$RELEASE_TAG" >> "$GITHUB_OUTPUT"

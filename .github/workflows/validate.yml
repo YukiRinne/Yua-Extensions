@@ -1,0 +1,34 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 单元测试（tools + 校验链 + catalog 构建）
+        run: python -m unittest discover -s tests -v
+      - name: index.txt 与重生成结果一致
+        run: python tools/build-index.py --check
+      - name: 深度校验（sha256 / 容器结构 / 自洽性 / 名字一致性）
+        run: python tools/validate.py
+      - name: 试构建 Releases 目录产物
+        run: python tools/build-catalog.py --output dist/validate-check --base-url https://example.invalid

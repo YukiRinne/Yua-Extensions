@@ -1,0 +1,34 @@
+name: 撤回或恢复扩展集
+description: 申请撤回问题扩展集或恢复已撤回记录，维护者批准后生效并重新发布目录。
+title: "[收录变更] "
+body:
+  - type: dropdown
+    id: action
+    attributes:
+      label: 操作
+      options:
+        - 撤回扩展集
+        - 恢复撤回记录
+    validations:
+      required: true
+  - type: input
+    id: publisher
+    attributes:
+      label: 会社
+      placeholder: 与目录名一致，例如 Yuzu
+    validations:
+      required: true
+  - type: input
+    id: title
+    attributes:
+      label: 作品
+      placeholder: 与目录名一致，例如 limelight_lj
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: 原因或说明
+      description: 填写撤回或恢复的具体原因。
+    validations:
+      required: true
