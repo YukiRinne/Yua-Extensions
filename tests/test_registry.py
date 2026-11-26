@@ -148,7 +148,8 @@ class TestBuildCatalog(unittest.TestCase):
             )
             self.assertEqual(catalog["schema_version"], 1)
             self.assertGreaterEqual(len(catalog["entries"]), 1)
-            yuzu = next(e for e in catalog["entries"] if e["id"] == "Yuzu/limelight_lj")
+            slot = "Yuzu Soft/LimeLight Lemonade Jam"
+            yuzu = next(e for e in catalog["entries"] if e["id"] == slot)
             self.assertEqual(yuzu["entry_count"], 85285)
             self.assertEqual(yuzu["directory_count"], 49)
             self.assertEqual(yuzu["file_count"], 85236)
@@ -156,7 +157,7 @@ class TestBuildCatalog(unittest.TestCase):
             self.assertEqual(yuzu["version"], "v1.0")
             self.assertEqual(
                 yuzu["package"]["path"],
-                f"assets/Yuzu__limelight_lj__{yuzu['archive_sha256'][:12].lower()}.int",
+                f"assets/Yuzu_Soft__LimeLight_Lemonade_Jam__{yuzu['archive_sha256'][:12].lower()}.int",
             )
 
             prepped = build_catalog.prepare_release_assets(
@@ -166,7 +167,7 @@ class TestBuildCatalog(unittest.TestCase):
                 release_tag="vtest",
             )
             self.assertEqual(prepped["release_tag"], "vtest")
-            out_yuzu = next(e for e in prepped["entries"] if e["id"] == "Yuzu/limelight_lj")
+            out_yuzu = next(e for e in prepped["entries"] if e["id"] == slot)
             asset_file = assets / out_yuzu["package"]["path"]
             self.assertTrue(asset_file.is_file())
             self.assertEqual(

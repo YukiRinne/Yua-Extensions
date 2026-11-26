@@ -15,14 +15,14 @@ body:
     id: publisher
     attributes:
       label: 会社
-      placeholder: 与目录名一致，例如 Yuzu
+      placeholder: 与目录名一致，例如 Yuzu Soft
     validations:
       required: true
   - type: input
     id: title
     attributes:
       label: 作品
-      placeholder: 与目录名一致，例如 limelight_lj
+      placeholder: 与目录名一致，例如 LimeLight Lemonade Jam
     validations:
       required: true
   - type: textarea

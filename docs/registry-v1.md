@@ -33,9 +33,9 @@
   "release_tag": "catalog-...",
   "entries": [
     {
-      "id": "Yuzu/limelight_lj",
-      "publisher": "Yuzu",
-      "title": "limelight_lj",
+      "id": "Yuzu Soft/LimeLight Lemonade Jam",
+      "publisher": "Yuzu Soft",
+      "title": "LimeLight Lemonade Jam",
       "contributor": "Rinne",
       "version": "v1.0",
       "date": "2026-10-15",
@@ -55,9 +55,9 @@
       "yanked": false,
       "yank_reason": "",
       "package": {
-        "path": "Yuzu__limelight_lj__3a12fd2ba90a.int",
-        "url": "https://github.com/YukiRinne/Yua-Extensions/releases/download/.../Yuzu__limelight_lj__3a12fd2ba90a.int",
-        "size": 238299,
+        "path": "Yuzu_Soft__LimeLight_Lemonade_Jam__42362509e9a4.int",
+        "url": "https://github.com/YukiRinne/Yua-Extensions/releases/download/.../Yuzu_Soft__LimeLight_Lemonade_Jam__42362509e9a4.int",
+        "size": 193978,
         "sha256": "..."
       }
     }
